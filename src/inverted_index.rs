@@ -119,11 +119,13 @@ C: ComponentType,  T: PartialOrd + DataType,
         query_cut: usize,
         heap_factor: f32,
     ) -> Vec<(f32, usize)> {
+
         let mut query = vec![0.0; self.dim()];
 
         for (&i, &v) in query_components.iter().zip(query_values) {
             query[i.as_()] = v;
         }
+        
         let mut heap = HeapFaiss::new(k);
         let mut visited = HashSet::with_capacity(query_cut * 5000); // 5000 should be n_postings
 
