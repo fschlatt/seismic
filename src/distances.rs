@@ -1,4 +1,4 @@
-use crate::{utils::binary_search_branchless, DataType};
+use crate::{utils::binary_search_branchless, DataType, ComponentType};
 
 /// Computes the dot product between a dense query and a sparse vector.
 /// Before using this function, the query must be made dense. This is much faster
@@ -20,7 +20,7 @@ use crate::{utils::binary_search_branchless, DataType};
 /// use seismic::distances::dot_product_dense_sparse;
 ///
 /// let query = [1.0, 2.0, 3.0, 0.0];
-/// let v_components = [0, 2, 3];
+/// let v_components = [0_u16, 2, 3];
 /// let v_values = [1.0, 1.0, 1.5];
 ///
 /// let result = dot_product_dense_sparse(&query, &v_components, &v_values);
@@ -28,10 +28,7 @@ use crate::{utils::binary_search_branchless, DataType};
 /// ```
 #[inline]
 #[must_use]
-pub fn dot_product_dense_sparse<Q, V>(query: &[Q], v_components: &[u16], v_values: &[V]) -> f32
-where
-    Q: DataType,
-    V: DataType,
+pub fn dot_product_dense_sparse<C: ComponentType, Q: DataType, V: DataType>(query: &[Q], v_components: &[C], v_values: &[V]) -> f32
 {
     const N_LANES: usize = 4;
 
@@ -40,10 +37,10 @@ where
 
     for chunk in chunk_iter {
         //for i in 0..N_LANES { // Slightly faster withour this for.
-        result[0] += query[*chunk[0].0 as usize].to_f32().unwrap() * (chunk[0].1.to_f32().unwrap());
-        result[1] += query[*chunk[1].0 as usize].to_f32().unwrap() * chunk[1].1.to_f32().unwrap();
-        result[2] += query[*chunk[2].0 as usize].to_f32().unwrap() * chunk[2].1.to_f32().unwrap();
-        result[3] += query[*chunk[3].0 as usize].to_f32().unwrap() * chunk[3].1.to_f32().unwrap();
+        result[0] += query[(*chunk[0].0).as_()].to_f32().unwrap() * (chunk[0].1.to_f32().unwrap());
+        result[1] += query[(*chunk[1].0).as_()].to_f32().unwrap() * chunk[1].1.to_f32().unwrap();
+        result[2] += query[(*chunk[2].0).as_()].to_f32().unwrap() * chunk[2].1.to_f32().unwrap();
+        result[3] += query[(*chunk[3].0).as_()].to_f32().unwrap() * chunk[3].1.to_f32().unwrap();
         //result[3] += unsafe { *query.get_unchecked(*chunk[3].0 as usize) } * *chunk[3].1;
         //}
     }
@@ -53,7 +50,7 @@ where
 
     if rem > 0 {
         for (&i, &v) in v_components[l - rem..].iter().zip(&v_values[l - rem..]) {
-            result[0] += query[i as usize].to_f32().unwrap() * v.to_f32().unwrap();
+            result[0] += query[i.as_()].to_f32().unwrap() * v.to_f32().unwrap();
         }
     }
 
@@ -88,9 +85,9 @@ where
 /// ```
 /// use seismic::distances::dot_product_with_binary_search;
 ///
-/// let query_term_ids = [1, 2, 7];
+/// let query_term_ids = [1_u16, 2, 7];
 /// let query_values = [1.0, 1.0, 1.0];
-/// let v_term_ids = [0, 1, 2, 3, 4];
+/// let v_term_ids = [0_u16, 1, 2, 3, 4];
 /// let v_values = [0.1, 1.0, 1.0, 1.0, 0.5];
 ///
 /// let result = dot_product_with_binary_search(&query_term_ids, &query_values, &v_term_ids, &v_values);
@@ -98,15 +95,12 @@ where
 /// ```
 #[inline]
 #[must_use]
-pub fn dot_product_with_binary_search<Q, V>(
+pub fn dot_product_with_binary_search<Q: DataType, V: DataType>(
     query_term_ids: &[u16],
     query_values: &[Q],
     v_terms_ids: &[u16],
     v_values: &[V],
 ) -> f32
-where
-    Q: DataType,
-    V: DataType,
 {
     let mut result = 0.0;
 
@@ -145,9 +139,9 @@ where
 /// ```
 /// use seismic::distances::dot_product_with_merge;
 ///
-/// let query_term_ids = [1, 2, 7];
+/// let query_term_ids = [1_u16, 2, 7];
 /// let query_values = [1.0, 1.0, 1.0];
-/// let v_term_ids = [0, 1, 2, 3, 4];
+/// let v_term_ids = [0_u16, 1, 2, 3, 4];
 /// let v_values = [0.1, 1.0, 1.0, 1.0, 0.5];
 ///
 /// let result = dot_product_with_merge(&query_term_ids, &query_values, &v_term_ids, &v_values);
@@ -155,15 +149,12 @@ where
 /// ```
 #[inline]
 #[must_use]
-pub fn dot_product_with_merge<Q, V>(
-    query_term_ids: &[u16],
+pub fn dot_product_with_merge<C: ComponentType, Q: DataType, V: DataType>(
+    query_term_ids: &[C],
     query_values: &[Q],
-    v_term_ids: &[u16],
+    v_term_ids: &[C],
     v_values: &[V],
 ) -> f32
-where
-    Q: DataType,
-    V: DataType,
 {
     let mut result = 0.0;
     let mut i = 0;

@@ -35,6 +35,15 @@ use num_traits::{AsPrimitive, ToPrimitive, Zero};
 use pyo3::prelude::PyModule;
 use pyo3::{pymodule, PyResult, Python};
 
+
+/// Marker for types used as components in a dataset
+pub trait ComponentType: AsPrimitive<usize>  + SpaceUsage + Copy + Send + Sync + std::hash::Hash + Eq + Ord + std::convert::TryFrom<usize> {
+}
+
+impl ComponentType for u16 {}
+
+impl ComponentType for u32 {}
+
 /// Marker for types used as values in a dataset
 pub trait DataType:
     SpaceUsage + Copy + AsPrimitive<f16> + ToPrimitive + Zero + Send + Sync

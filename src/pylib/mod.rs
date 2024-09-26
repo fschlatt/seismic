@@ -8,7 +8,7 @@ use crate::inverted_index::{BlockingStrategy, Configuration, PruningStrategy, Su
 
 #[pyclass]
 pub struct PySeismicIndex {
-    inverted_index: InvertedIndex<f16>,
+    inverted_index: InvertedIndex<u16, f16>,
 }
 
 #[pymethods]
@@ -16,7 +16,7 @@ impl PySeismicIndex {
     #[staticmethod]
     pub fn load(index_path: &str) -> PyResult<PySeismicIndex> {
         let serialized: Vec<u8> = fs::read(index_path).unwrap();
-        let inverted_index = bincode::deserialize::<InvertedIndex<f16>>(&serialized).unwrap();
+        let inverted_index = bincode::deserialize::<InvertedIndex<u16, f16>>(&serialized).unwrap();
         Ok(PySeismicIndex { inverted_index })
     }
 
@@ -37,7 +37,7 @@ impl PySeismicIndex {
                  truncation_size: usize,
                  min_cluster_size: usize,
                  summary_energy: f32) -> PyResult<PySeismicIndex> {
-        let dataset = SparseDataset::<f32>::read_bin_file(input_file)
+        let dataset = SparseDataset::<u16, f32>::read_bin_file(input_file)
             .unwrap()
             .quantize_f16();
 
@@ -98,7 +98,7 @@ impl PySeismicIndex {
             .build()
             .unwrap();
 
-        let queries = SparseDataset::<f32>::read_bin_file(query_path).unwrap();
+        let queries = SparseDataset::<u16, f32>::read_bin_file(query_path).unwrap();
 
         queries
             .par_iter()

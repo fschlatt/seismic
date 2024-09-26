@@ -1,10 +1,10 @@
 use core::hash::Hash;
 use std::collections::HashSet;
-//use std::time::Instant;
 
 use rand::{seq::IteratorRandom, thread_rng};
 
-use crate::{distances::dot_product_dense_sparse, DataType, SparseDataset};
+use crate::{distances::dot_product_dense_sparse, SparseDataset};
+use crate::{ComponentType, DataType};
 
 /// Computes the size of the intersection of two unsorted lists of integers.
 pub fn intersection<T: Eq + Hash + Clone>(s: &[T], groundtruth: &[T]) -> usize {
@@ -66,10 +66,10 @@ pub fn binary_search_branchless(data: &[u16], target: u16) -> usize {
     base
 }
 
-pub fn do_random_kmeans_on_docids<T: DataType>(
+pub fn do_random_kmeans_on_docids<C: ComponentType, T: DataType>(
     doc_ids: &[usize],
     n_clusters: usize,
-    dataset: &SparseDataset<T>,
+    dataset: &SparseDataset<C, T>,
     min_cluster_size: usize,
 ) -> Vec<Vec<usize>> {
     // let time = Instant::now();
@@ -86,7 +86,7 @@ pub fn do_random_kmeans_on_docids<T: DataType>(
         //densify the vector
 
         for (&i, &v) in dataset.iter_vector(doc_id) {
-            dense_vector[i as usize] = v;
+            dense_vector[i.as_()] = v;
         }
         let mut argmax = 0;
         let mut max = 0_f32;
@@ -121,7 +121,7 @@ pub fn do_random_kmeans_on_docids<T: DataType>(
 
         // Densify the vector
         for (&i, &v) in dataset.iter_vector(doc_id) {
-            dense_vector[i as usize] = v;
+            dense_vector[i.as_()] = v;
         }
 
         let mut argmax = 0;

@@ -2,7 +2,8 @@ use crate::distances::{dot_product_dense_sparse, dot_product_with_merge};
 use crate::sparse_dataset::SparseDatasetMut;
 use crate::topk_selectors::{HeapFaiss, OnlineTopKSelector};
 use crate::utils::{do_random_kmeans_on_docids, prefetch_read_NTA};
-use crate::{DataType, QuantizedSummary, SpaceUsage, SparseDataset};
+use crate::{QuantizedSummary, SpaceUsage, SparseDataset};
+use crate::{ComponentType, DataType};
 
 use indicatif::ParallelProgressIterator;
 
@@ -15,18 +16,18 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 #[derive(Default, PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct InvertedIndex<T>
+pub struct InvertedIndex<C, T>
 where
-    T: DataType,
+    C: ComponentType,  T: DataType,
 {
-    forward_index: SparseDataset<T>,
+    forward_index: SparseDataset<C, T>,
     posting_lists: Box<[PostingList]>,
     config: Configuration,
 }
 
-impl<T> SpaceUsage for InvertedIndex<T>
+impl<C, T> SpaceUsage for InvertedIndex<C, T>
 where
-    T: DataType,
+C: ComponentType,  T: DataType,
 {
     fn space_usage_byte(&self) -> usize {
         let forward = self.forward_index.space_usage_byte();
@@ -86,9 +87,9 @@ impl Configuration {
 
 const THRESHOLD_BINARY_SEARCH: usize = 10;
 
-impl<T> InvertedIndex<T>
+impl<C, T> InvertedIndex<C, T>
 where
-    T: PartialOrd + DataType,
+C: ComponentType,  T: PartialOrd + DataType,
 {
     /// Help function to print the space usage of the index.
     pub fn print_space_usage_byte(&self) -> usize {
@@ -112,7 +113,7 @@ where
     #[inline]
     pub fn search(
         &self,
-        query_components: &[u16],
+        query_components: &[C], // FIXME NOW WE ARE USING U16, WE SHOULD USE C
         query_values: &[f32],
         k: usize,
         query_cut: usize,
@@ -121,7 +122,7 @@ where
         let mut query = vec![0.0; self.dim()];
 
         for (&i, &v) in query_components.iter().zip(query_values) {
-            query[i as usize] = v;
+            query[i.as_()] = v;
         }
         let mut heap = HeapFaiss::new(k);
         let mut visited = HashSet::with_capacity(query_cut * 5000); // 5000 should be n_postings
@@ -133,7 +134,7 @@ where
             .sorted_unstable_by(|a, b| b.1.partial_cmp(a.1).unwrap())
             .take(query_cut)
         {
-            self.posting_lists[component_id as usize].search(
+            self.posting_lists[component_id.as_()].search(
                 &query,
                 query_components,
                 query_values,
@@ -152,7 +153,8 @@ where
     }
 
     /// `n_postings`: minimum number of postings to select for each component
-    pub fn build(dataset: SparseDataset<T>, config: Configuration) -> Self {
+    pub fn build(dataset: SparseDataset<C, T>, config: Configuration) -> Self
+     where <C as TryFrom<usize>>::Error: std::fmt::Debug {
         // Distribute pairs (score, doc_id) to corresponding components.
         // We use pairs because later each posting list will be sorted by score
         // by the pruning strategy.
@@ -166,7 +168,7 @@ where
 
         for (doc_id, (components, values)) in dataset.iter().enumerate() {
             for (&c, &score) in components.iter().zip(values) {
-                inverted_pairs[c as usize].push((score, doc_id));
+                inverted_pairs[c.as_()].push((score, doc_id));
             }
         }
 
@@ -235,14 +237,14 @@ where
     }
 
     // Implementation of the pruning strategy that selects a threshold such that survives on average `n_postings` for each posting list
-    fn global_threshold_pruning(inverted_pairs: &mut [Vec<(T, usize)>], n_postings: usize) {
+    fn global_threshold_pruning(inverted_pairs: &mut [Vec<(T, usize)>], n_postings: usize) where <C as TryFrom<usize>>::Error: std::fmt::Debug {
         let tot_postings = inverted_pairs.len() * n_postings; // overall number of postings to select
 
         // for every posting we create the tuple <score, docid, id_posting_list>
-        let mut postings = Vec::<(T, usize, u16)>::new();
+        let mut postings = Vec::<(T, usize, C)>::new();
         for (id, posting_list) in inverted_pairs.iter_mut().enumerate() {
             for (score, docid) in posting_list.iter() {
-                postings.push((*score, *docid, id as u16));
+                postings.push((*score, *docid, id.try_into().unwrap()));
             }
             posting_list.clear();
         }
@@ -252,7 +254,7 @@ where
         postings.select_nth_unstable_by(tot_postings, |a, b| b.0.partial_cmp(&a.0).unwrap());
 
         for (score, docid, id_posting) in postings.into_iter().take(tot_postings) {
-            inverted_pairs[id_posting as usize].push((score, docid));
+            inverted_pairs[id_posting.as_()].push((score, docid));
         }
     }
 
@@ -315,17 +317,18 @@ impl PostingList {
 
     #[allow(clippy::too_many_arguments)]
     #[inline]
-    pub fn search<T>(
+    pub fn search<C, T>(
         &self,
         query: &[f32],
-        query_components: &[u16],
+        query_components: &[C],
         query_values: &[f32],
         k: usize,
         heap_factor: f32,
         heap: &mut HeapFaiss,
         visited: &mut HashSet<usize>,
-        forward_index: &SparseDataset<T>,
+        forward_index: &SparseDataset<C, T>,
     ) where
+        C: ComponentType,
         T: DataType,
     {
         let mut blocks_to_evaluate: Vec<&[u64]> = Vec::new();
@@ -379,17 +382,17 @@ impl PostingList {
 
     #[allow(clippy::too_many_arguments)]
     #[inline]
-    fn evaluate_posting_block<T>(
+    fn evaluate_posting_block<C, T>(
         &self,
         query: &[f32],
-        query_term_ids: &[u16],
+        query_term_ids: &[C],
         query_values: &[f32],
         packed_posting_block: &[u64],
         heap: &mut HeapFaiss,
         visited: &mut HashSet<usize>,
-        forward_index: &SparseDataset<T>,
+        forward_index: &SparseDataset<C, T>,
     ) where
-        T: DataType,
+    C: ComponentType,  T: DataType,
     {
         let (mut prev_offset, mut prev_len) = Self::unpack_offset_len(packed_posting_block[0]);
 
@@ -434,13 +437,13 @@ impl PostingList {
     /// Gets a posting list already pruned and represents it by using a blocking
     /// strategy to partition postings into block and a summarization strategy to
     /// represents the summary of each block.
-    pub fn build<T>(
-        dataset: &SparseDataset<T>,
+    pub fn build<C, T>(
+        dataset: &SparseDataset<C, T>,
         postings: &[(T, usize)],
         config: &Configuration,
     ) -> Self
     where
-        T: PartialOrd + DataType,
+    C: ComponentType,  T: PartialOrd + DataType,
     {
         let mut posting_list: Vec<_> = postings.iter().map(|(_, docid)| *docid).collect();
 
@@ -464,7 +467,7 @@ impl PostingList {
             ),
         };
 
-        let mut summaries = SparseDatasetMut::<T>::new();
+        let mut summaries = SparseDatasetMut::<C, T>::new();
 
         for block_range in block_offsets.windows(2) {
             let (components, values) = match config.summarization {
@@ -497,7 +500,7 @@ impl PostingList {
             packed_postings: packed_postings.into_boxed_slice(),
             block_offsets: block_offsets.into_boxed_slice(),
             summaries: QuantizedSummary::new(
-                SparseDataset::<T>::from(summaries).quantize_f16(),
+                SparseDataset::<C, T>::from(summaries).quantize_f16(),
                 dataset.dim(),
             ),
         }
@@ -516,13 +519,13 @@ impl PostingList {
         block_offsets
     }
 
-    fn blocking_with_random_kmeans<T: DataType>(
+    fn blocking_with_random_kmeans<C:ComponentType,  T: DataType>(
         posting_list: &mut [usize],
         centroid_fraction: f32,
         truncated_kmeans_training: bool,
         _truncation_size: usize,
         min_cluster_size: usize,
-        dataset: &SparseDataset<T>,
+        dataset: &SparseDataset<C, T>,
     ) -> Vec<usize> {
         if posting_list.is_empty() {
             return Vec::new();
@@ -558,12 +561,13 @@ impl PostingList {
 
     // ** Summarization strategies **
 
-    fn fixed_size_summary<T>(
-        dataset: &SparseDataset<T>,
+    fn fixed_size_summary<C, T>(
+        dataset: &SparseDataset<C, T>,
         block: &[usize],
         n_components: usize,
-    ) -> (Vec<u16>, Vec<T>)
+    ) -> (Vec<C>, Vec<T>)
     where
+        C: ComponentType,
         T: PartialOrd + DataType,
     {
         let mut hash = HashMap::new();
@@ -595,12 +599,13 @@ impl PostingList {
         (components, values)
     }
 
-    fn energy_preserving_summary<T>(
-        dataset: &SparseDataset<T>,
+    fn energy_preserving_summary<C, T>(
+        dataset: &SparseDataset<C,T>,
         block: &[usize],
         fraction: f32,
-    ) -> (Vec<u16>, Vec<T>)
+    ) -> (Vec<C>, Vec<T>)
     where
+        C: ComponentType,
         T: PartialOrd + DataType,
     {
         let mut hash = HashMap::new();

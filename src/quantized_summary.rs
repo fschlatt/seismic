@@ -2,7 +2,7 @@ use half::f16;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SpaceUsage, SparseDataset};
+use crate::{SpaceUsage, SparseDataset, ComponentType};
 
 use qwt::SpaceUsage as QwtSpaceUsage;
 
@@ -30,12 +30,13 @@ impl QuantizedSummary {
             + SpaceUsage::space_usage_byte(&self.quants)
     }
 
-    pub fn matmul_with_query(&self, query_components: &[u16], query_values: &[f32]) -> Vec<f32> {
+    pub fn matmul_with_query<C: ComponentType>(&self, query_components: &[C], query_values: &[f32]) -> Vec<f32> {
         let mut accumulator = vec![0_f32; self.n_summaries];
 
         for (&qc, &qv) in query_components.iter().zip(query_values) {
-            let current_offset = self.offsets.select1(qc as usize).unwrap() - qc as usize;
-            let next_offset = self.offsets.select1((qc + 1) as usize).unwrap() - qc as usize - 1;
+            let qc_usize = qc.as_();
+            let current_offset = self.offsets.select1(qc_usize).unwrap() - qc_usize;
+            let next_offset = self.offsets.select1(qc_usize + 1).unwrap() - qc_usize  - 1;
 
             if next_offset - current_offset == 0 {
                 continue;
@@ -58,7 +59,7 @@ impl QuantizedSummary {
         accumulator
     }
 
-    pub fn new(dataset: SparseDataset<f16>, original_dim: usize) -> QuantizedSummary {
+    pub fn new<C: ComponentType>(dataset: SparseDataset<C, f16>, original_dim: usize) -> QuantizedSummary {
         // We need the original dim because the summaries for the current posting list may not
         // contain all the components. An alternative is to use an HashMap to map
         // the components
@@ -78,7 +79,7 @@ impl QuantizedSummary {
             quants.push(quant);
 
             for (&c, score) in components.iter().zip(current_codes) {
-                inverted_pairs[c as usize].push((score, doc_id));
+                inverted_pairs[c.as_()].push((score, doc_id));
             }
         }
 
