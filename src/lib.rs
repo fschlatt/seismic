@@ -31,6 +31,7 @@ pub mod topk_selectors;
 pub mod utils;
 
 use crate::pylib::PySeismicIndex;
+use crate::pylib::PySeismicIndexLargeVocabulary;
 use num_traits::{AsPrimitive, ToPrimitive, Zero};
 use pyo3::prelude::PyModule;
 use pyo3::{pymodule, PyResult, Python};
@@ -61,5 +62,6 @@ impl DataType for f16 {}
 #[pymodule]
 fn seismic(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeismicIndex>()?;
+    m.add_class::<PySeismicIndexLargeVocabulary>()?;
     Ok(())
 }
